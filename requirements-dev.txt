@@ -1,0 +1,4 @@
+# Dependências apenas para desenvolvimento/testes (Fase 1).
+# O runtime do Lambda já inclui boto3 — não precisa instalar.
+pytest>=7.0
+boto3>=1.34

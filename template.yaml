@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Nuvem Protetora - Fase 2 (AWS).
+  Arquitetura serverless dentro do AWS Free Tier:
+  API Gateway -> Lambda -> Comprehend -> DynamoDB -> SNS.
+
+  IMPORTANTE: este template usa SOMENTE recursos que se encaixam no
+  free tier para um protótipo de baixo volume. Mesmo assim, leia
+  docs/CUSTOS.md e configure o billing alarm ANTES do deploy.
+
+Globals:
+  Function:
+    Timeout: 15
+    MemorySize: 256        # menor memória elegível = menor custo
+    Runtime: python3.12
+
+Parameters:
+  EmailResponsavel:
+    Type: String
+    Description: >
+      E-mail que recebera os alertas (assinatura do topico SNS).
+      Voce precisara confirmar a inscricao pelo link enviado.
+
+Resources:
+
+  # Tabela: guarda SOMENTE o indicador de risco, nunca a mensagem.
+  # On-demand (PAY_PER_REQUEST) -> nao ha custo de capacidade ociosa.
+  EventosTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: NuvemProtetoraEventos
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: evento_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: evento_id
+          KeyType: HASH
+
+  # Topico de notificacao para o app do responsavel.
+  AlertasTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: NuvemProtetoraAlertas
+
+  AlertasSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertasTopic
+      Protocol: email
+      Endpoint: !Ref EmailResponsavel
+
+  # Funcao de processamento (o "Backend" do diagrama).
+  ProcessamentoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: NuvemProtetoraProcessamento
+      CodeUri: ../src/
+      Handler: lambda/app.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EventosTable
+          TOPIC_ARN: !Ref AlertasTopic
+          NOTIFY_FROM: alerta
+      Policies:
+        # Permissoes minimas (principio do menor privilegio)
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EventosTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AlertasTopic.TopicName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - comprehend:DetectSentiment
+                - comprehend:DetectPiiEntities
+              Resource: '*'
+      Events:
+        AnalisarApi:
+          Type: Api
+          Properties:
+            Path: /analisar
+            Method: post
+
+Outputs:
+  ApiUrl:
+    Description: Endpoint para o app enviar mensagens
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/analisar"
+  TabelaEventos:
+    Description: Tabela DynamoDB (somente indicadores)
+    Value: !Ref EventosTable

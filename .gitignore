@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# AWS SAM
+.aws-sam/
+samconfig.toml
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
